@@ -130,7 +130,7 @@ def cl_forward(self,
     if num_sent == 3:
         # Note that weights are actually logits of weights
         z3_weight = self.hard_negative_weight
-        # 画一个前cos_sim.size(-1)行为0, 后z1_z3_cos.size(-1)行对角线为0 + z3_weight的矩阵
+        # 画一个前cos_sim.size(-1)列为0, 后z1_z3_cos.size(-1)列对角线为0 + z3_weight的矩阵
         weights = torch.tensor(
             [[0.0] * (cos_sim.size(-1) - z1_z3_cos.size(-1)) + [0.0] * i + [z3_weight] + [
                 0.0] * (z1_z3_cos.size(-1) - i - 1) for i in range(z1_z3_cos.size(-1))]

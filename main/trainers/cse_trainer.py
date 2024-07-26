@@ -162,7 +162,7 @@ class Trainer():
         # bert_model.save_pretrained(
         #     f'./save_model/{dir}/bert_{current_step}')
         model_self.save_pretrained(
-            f'./save_model/{dir}/simcse_{current_step}')
+            f'./save_model/{dir}/simcse_{current_step}', safe_serialization=False)
         self.analysis.append_model_record(current_step)
         return current_step
 
