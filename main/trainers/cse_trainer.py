@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 class Trainer():
 
-    def __init__(self, tokenizer, from_pretrained=None, data_name='default', data_present_path=None, train_file=None, eval_file=None, test_file=None, max_seq_len=256, batch_size=16, batch_size_eval=64, hard_negative_weight=0, temp=0.05, eval_mode='dev', task_name='SimCSE'):
+    def __init__(self, tokenizer, from_pretrained=None, data_name='default', data_present_path=None, train_file=None, eval_file=None, test_file=None, max_seq_len=256, batch_size=16, batch_size_eval=64, eval_label_scale=5.0, hard_negative_weight=0, temp=0.05, eval_mode='dev', task_name='SimCSE'):
         self.tokenizer = tokenizer
         self.from_pretrained = from_pretrained
         self.data_name = data_name
@@ -29,6 +29,7 @@ class Trainer():
         self.max_seq_len = max_seq_len
         self.batch_size = batch_size
         self.batch_size_eval = batch_size_eval
+        self.eval_label_scale = eval_label_scale
         self.hard_negative_weight = hard_negative_weight
         self.temp = temp
         self.eval_mode = eval_mode
@@ -206,10 +207,10 @@ class Trainer():
                 gold = it['labels']
                 X += p.tolist()
                 Y += gold.tolist()
-                tp += ((gold >= 0.5) & (p >= 0.5)).sum().item()
-                fp += ((gold < 0.5) & (p >= 0.5)).sum().item()
-                fn += ((gold >= 0.5) & (p < 0.5)).sum().item()
-                tn += ((gold < 0.5) & (p < 0.5)).sum().item()
+                tp += ((gold / self.eval_label_scale >= 0.5) & (p / self.eval_label_scale >= 0.5)).sum().item()
+                fp += ((gold / self.eval_label_scale < 0.5) & (p / self.eval_label_scale >= 0.5)).sum().item()
+                fn += ((gold / self.eval_label_scale >= 0.5) & (p / self.eval_label_scale < 0.5)).sum().item()
+                tn += ((gold / self.eval_label_scale < 0.5) & (p / self.eval_label_scale < 0.5)).sum().item()
                 precision = tp / (tp + fp + 1e-8)
                 recall = tp / (tp + fn + 1e-8)
                 f1 = 2 * precision * recall / (precision + recall + 1e-8)
