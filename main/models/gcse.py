@@ -56,7 +56,7 @@ def cl_forward(self,
                head_mask=None,
                inputs_embeds=None,
                labels=None,
-               pos_labels=None,
+               base_cos_sim=None,
                neg_labels=None,
                output_attentions=None,
                output_hidden_states=None,
@@ -134,9 +134,10 @@ def cl_forward(self,
     # Calculate loss with hard negatives
     if num_sent == 3:
         # Note that weights are actually logits of weights
-        z3_weight = torch.diag(z1_z3_cos).detach()
-        z3_weight = -z3_weight * torch.exp(- (z3_weight - neg_labels)**2 / (2 * 0.15**2))
-        z3_weight[z3_weight >= self.alpha] = 0
+        z3_weight = torch.diag(z1_z3_cos).detach() #
+        neg_labels = torch.diag(base_cos_sim[:,-z1_z3_cos.size(-1):]).detach() #
+        z3_weight = -z3_weight * torch.exp(- (z3_weight - neg_labels)**2 / (2 * 0.17**2))
+        z3_weight[z3_weight >= self.alpha] = 0 #
         # 画一个前cos_sim.size(-1)列为0, 后z1_z3_cos.size(-1)列对角线为0 + z3_weight的矩阵
         weights = torch.tensor(
             [[0.0] * (cos_sim.size(-1) - z1_z3_cos.size(-1)) + [0.0] * i + [z3_weight[i]] + [
@@ -176,7 +177,7 @@ class GCSE(BertPreTrainedModel):
                 head_mask=None,
                 inputs_embeds=None,
                 labels=None,
-                pos_labels=None,
+                base_cos_sim=None,
                 neg_labels=None,
                 output_attentions=None,
                 output_hidden_states=None,
@@ -191,7 +192,7 @@ class GCSE(BertPreTrainedModel):
                           head_mask=head_mask,
                           inputs_embeds=inputs_embeds,
                           labels=labels,
-                          pos_labels=pos_labels,
+                          base_cos_sim=base_cos_sim,
                           neg_labels=neg_labels,
                           output_attentions=output_attentions,
                           output_hidden_states=output_hidden_states,
@@ -213,7 +214,7 @@ class GCSERoberta(RobertaPreTrainedModel):
                 head_mask=None,
                 inputs_embeds=None,
                 labels=None,
-                pos_labels=None,
+                base_cos_sim=None,
                 neg_labels=None,
                 output_attentions=None,
                 output_hidden_states=None,
@@ -228,7 +229,7 @@ class GCSERoberta(RobertaPreTrainedModel):
                           head_mask=head_mask,
                           inputs_embeds=inputs_embeds,
                           labels=labels,
-                          pos_labels=pos_labels,
+                          base_cos_sim=base_cos_sim,
                           neg_labels=neg_labels,
                           output_attentions=output_attentions,
                           output_hidden_states=output_hidden_states,

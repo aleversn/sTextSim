@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from transformers import AutoConfig
 from transformers import get_linear_schedule_with_warmup
 from main.models.gcse import GCSE, GCSERoberta
+from main.models.simcse import SimCSE, SimCSERoberta
 from main.loaders.gcse_cl_loader import CLDataset
 from main.analysis import Analysis
 from torch.utils.data import DataLoader
@@ -17,9 +18,10 @@ from tqdm import tqdm
 
 class Trainer():
 
-    def __init__(self, tokenizer, from_pretrained=None, data_name='default', data_present_path=None, train_file=None, eval_file=None, test_file=None, max_seq_len=256, batch_size=16, batch_size_eval=64, eval_label_scale=5.0, hard_negative_weight=0, temp=0.05, eval_mode='dev', task_name='GCSE'):
+    def __init__(self, tokenizer, from_pretrained=None, base_from_pretrained=None, data_name='default', data_present_path=None, train_file=None, eval_file=None, test_file=None, max_seq_len=256, batch_size=16, batch_size_eval=64, eval_label_scale=5.0, hard_negative_weight=0, temp=0.05, eval_mode='dev', task_name='GCSE'):
         self.tokenizer = tokenizer
         self.from_pretrained = from_pretrained
+        self.base_from_pretrained = base_from_pretrained
         self.data_name = data_name
         self.data_present_path = data_present_path
         self.train_file = train_file
@@ -41,11 +43,16 @@ class Trainer():
     def model_init(self):
         self.config = AutoConfig.from_pretrained(
             self.from_pretrained)
+        base_from_pretrained = self.base_from_pretrained if self.base_from_pretrained is not None else self.from_pretrained
         if self.config.model_type == 'bert':
             self.model = GCSE(from_pretrained=self.from_pretrained,
                                 pooler_type='cls', hard_negative_weight=self.hard_negative_weight, temp=self.temp)
+            self.base_model = SimCSE(from_pretrained=base_from_pretrained,
+                                pooler_type='cls', hard_negative_weight=self.hard_negative_weight, temp=self.temp)
         elif self.config.model_type == 'roberta':
             self.model = GCSERoberta(from_pretrained=self.from_pretrained,
+                                       pooler_type='cls', hard_negative_weight=self.hard_negative_weight, temp=self.temp)
+            self.base_model = SimCSERoberta(from_pretrained=base_from_pretrained,
                                        pooler_type='cls', hard_negative_weight=self.hard_negative_weight, temp=self.temp)
 
     def dataloader_init(self):
@@ -83,6 +90,9 @@ class Trainer():
         self.model.cuda()
         self.model = torch.nn.DataParallel(self.model, device_ids=gpu).cuda()
         self.model.to(device)
+        self.base_model.cuda()
+        self.base_model = torch.nn.DataParallel(self.base_model, device_ids=gpu).cuda()
+        self.base_model.to(device)
 
     def __call__(self, resume_step=None, num_epochs=30, lr=5e-5, gpu=[0, 1, 2, 3], eval_call_step=None):
         return self.train(resume_step=resume_step,
@@ -104,12 +114,14 @@ class Trainer():
 
             train_iter = tqdm(self.train_loader)
             self.model.train()
+            self.base_model.eval()
 
             for it in train_iter:
                 for key in it.keys():
                     it[key] = self.cuda(it[key])
-
-                outputs = self.model(**it)
+                
+                cos_sim = self.base_model(**it).logits.detach()
+                outputs = self.model(**it, base_cos_sim=cos_sim)
                 loss = outputs['loss']
                 loss = loss.mean()
 
@@ -221,7 +233,7 @@ class Trainer():
                 eval_iter.set_description(
                     f'Eval: {epoch + 1}')
                 eval_iter.set_postfix(
-                    eval_loss=eval_loss / eval_count, Spearman=np.mean(spearmanr), eval_acc=(tp + tn) / (tp + tn + fp + fn), precision=precision, recall=recall, f1=f1)
+                    eval_loss=eval_loss / eval_count, Spearman=np.mean(eval_spearman), eval_acc=(tp + tn) / (tp + tn + fp + fn), precision=precision, recall=recall, f1=f1)
 
             precision = tp / (tp + fp + 1e-8)
             recall = tp / (tp + fn + 1e-8)

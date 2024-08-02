@@ -207,10 +207,10 @@ class Trainer():
                 gold = it['labels']
                 X += p.tolist()
                 Y += gold.tolist()
-                tp += ((gold / self.eval_label_scale >= 0.5) & (p / self.eval_label_scale >= 0.5)).sum().item()
-                fp += ((gold / self.eval_label_scale < 0.5) & (p / self.eval_label_scale >= 0.5)).sum().item()
-                fn += ((gold / self.eval_label_scale >= 0.5) & (p / self.eval_label_scale < 0.5)).sum().item()
-                tn += ((gold / self.eval_label_scale < 0.5) & (p / self.eval_label_scale < 0.5)).sum().item()
+                tp += ((gold / self.eval_label_scale >= 0.5) & (p >= 0.5)).sum().item()
+                fp += ((gold / self.eval_label_scale < 0.5) & (p >= 0.5)).sum().item()
+                fn += ((gold / self.eval_label_scale >= 0.5) & (p < 0.5)).sum().item()
+                tn += ((gold / self.eval_label_scale < 0.5) & (p < 0.5)).sum().item()
                 precision = tp / (tp + fp + 1e-8)
                 recall = tp / (tp + fn + 1e-8)
                 f1 = 2 * precision * recall / (precision + recall + 1e-8)
@@ -221,7 +221,7 @@ class Trainer():
                 eval_iter.set_description(
                     f'Eval: {epoch + 1}')
                 eval_iter.set_postfix(
-                    eval_loss=eval_loss / eval_count, Spearman=np.mean(spearmanr), eval_acc=(tp + tn) / (tp + tn + fp + fn), precision=precision, recall=recall, f1=f1)
+                    eval_loss=eval_loss / eval_count, Spearman=np.mean(eval_spearman), eval_acc=(tp + tn) / (tp + tn + fp + fn), precision=precision, recall=recall, f1=f1)
 
             precision = tp / (tp + fp + 1e-8)
             recall = tp / (tp + fn + 1e-8)
