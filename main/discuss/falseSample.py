@@ -1,4 +1,7 @@
 # %%
+# this file is used to analyze the false samples in the prediction file
+# and save them into different files based on their scores
+# %%
 import json
 
 MAX_SCORE = 5
