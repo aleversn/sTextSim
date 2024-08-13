@@ -4,6 +4,7 @@ import uuid
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import warnings
 import numpy as np
 from tqdm import tqdm
 from main.analysis import Analysis
@@ -21,7 +22,8 @@ from accelerate import Accelerator
 accelerator = Accelerator()
 
 def get_peft_model(
-    model: PreTrainedModel, peft_config: PeftConfig, adapter_name: str = "default", pooler_type='cls', hard_negative_weight=0, temp=0.05):
+    model: PreTrainedModel, peft_config: PeftConfig, adapter_name: str = "default", autocast_adapter_dtype: bool = True,
+    revision = None, pooler_type='cls', hard_negative_weight=0, temp=0.05):
     """
     Returns a Peft model object from a model and a config.
 
@@ -34,6 +36,13 @@ def get_peft_model(
             The name of the adapter to be injected, if not provided, the default adapter name is used ("default").
         mixed (`bool`, `optional`, defaults to `False`):
             Whether to allow mixing different (compatible) adapter types.
+        autocast_adapter_dtype (`bool`, *optional*):
+            Whether to autocast the adapter dtype. Defaults to `True`. Right now, this will only cast adapter weights
+            using float16 or bfloat16 to float32, as this is typically required for stable training, and only affect
+            select PEFT tuners.
+        revision (`str`, `optional`, defaults to `main`):
+            The revision of the base model. If this isn't set, the saved peft model will load the `main` revision for
+            the base model
     """
     model_config = getattr(model, "config", {"model_type": "custom"})
     if hasattr(model_config, "to_dict"):
@@ -41,20 +50,28 @@ def get_peft_model(
 
     peft_config.base_model_name_or_path = model.__dict__.get("name_or_path", None)
 
+    if revision is not None:
+        if peft_config.revision is not None and peft_config.revision != revision:
+            warnings.warn(
+                f"peft config has already set base model revision to {peft_config.revision}, overwriting with revision {revision}"
+            )
+        peft_config.revision = revision
+
     if peft_config.is_prompt_learning:
         peft_config = _prepare_prompt_learning_config(peft_config, model_config)
-    return ChatGLMLoRACSE(model, peft_config, adapter_name=adapter_name, pooler_type=pooler_type, hard_negative_weight=hard_negative_weight, temp=temp)
+    return ChatGLMLoRACSE(model, peft_config, adapter_name=adapter_name, pooler_type=pooler_type, hard_negative_weight=hard_negative_weight, temp=temp, autocast_adapter_dtype=autocast_adapter_dtype)
 
 
 class Trainer():
     model: ChatGLMLoRACSE
     def __init__(
-        self, tokenizer, from_pretrained=None, resume_path=None, data_name='default', data_present_path=None, train_file=None, eval_file=None, test_file=None, max_seq_len=256, batch_size=2, batch_size_eval=32, eval_label_scale=5.0, hard_negative_weight=0, temp=0.05, eval_mode='dev', task_name='SimCSE'
+        self, tokenizer, from_pretrained=None, resume_path=None, autocast_adapter_dtype = True, data_name='default', data_present_path=None, train_file=None, eval_file=None, test_file=None, max_seq_len=256, batch_size=2, batch_size_eval=32, eval_label_scale=5.0, hard_negative_weight=0, temp=0.05, eval_mode='dev', task_name='SimCSE'
     ):
 
         self.tokenizer = tokenizer
         self.from_pretrained = from_pretrained
         self.resume_path = resume_path
+        self.autocast_adapter_dtype = autocast_adapter_dtype
         self.data_name = data_name
         self.data_present_path = data_present_path
         self.accelerate = accelerator
@@ -93,7 +110,6 @@ class Trainer():
                 self.model.enable_input_require_grads()
                 self.model = ChatGLMLoRACSE.from_pretrained(
                     self.model, self.resume_path, config=peft_config)
-                self.model.init_config(pooler_type='cls', hard_negative_weight=self.hard_negative_weight, temp=self.temp)
             else:
                 self.model = get_peft_model(self.model, peft_config, pooler_type='cls', hard_negative_weight=self.hard_negative_weight, temp=self.temp)
 
@@ -239,7 +255,7 @@ class Trainer():
                 logits = outputs['logits']
                 loss = loss.mean()
 
-                p = torch.diag(logits)
+                p = torch.diag(logits) * self.temp
                 # print(logits[29] * self.temp)
                 # text1 = self.tokenizer.decode(it['input_ids'][29][0], skip_special_tokens=True)
                 # text2 = self.tokenizer.decode(it['input_ids'][29][1], skip_special_tokens=True)
@@ -252,10 +268,10 @@ class Trainer():
                 gold = it['labels']
                 X += p.tolist()
                 Y += gold.tolist()
-                tp += ((gold / self.eval_label_scale >= 0.5) & (p / self.eval_label_scale >= 0.5)).sum().item()
-                fp += ((gold / self.eval_label_scale < 0.5) & (p / self.eval_label_scale >= 0.5)).sum().item()
-                fn += ((gold / self.eval_label_scale >= 0.5) & (p / self.eval_label_scale < 0.5)).sum().item()
-                tn += ((gold / self.eval_label_scale < 0.5) & (p / self.eval_label_scale < 0.5)).sum().item()
+                tp += ((gold / self.eval_label_scale >= 0.5) & (p >= 0.5)).sum().item()
+                fp += ((gold / self.eval_label_scale < 0.5) & (p >= 0.5)).sum().item()
+                fn += ((gold / self.eval_label_scale >= 0.5) & (p < 0.5)).sum().item()
+                tn += ((gold / self.eval_label_scale < 0.5) & (p < 0.5)).sum().item()
                 precision = tp / (tp + fp + 1e-8)
                 recall = tp / (tp + fn + 1e-8)
                 f1 = 2 * precision * recall / (precision + recall + 1e-8)

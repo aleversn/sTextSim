@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from transformers import AutoConfig, AutoModel
 from peft import get_peft_model, LoraConfig, TaskType, PeftModelForCausalLM
+from accelerate.hooks import remove_hook_from_submodules
 from transformers import PreTrainedModel
 from peft.config import PeftConfig
 from typing import Optional, Tuple
@@ -11,14 +11,14 @@ from transformers.utils import ModelOutput
 class ChatGLMLoRACSE(PeftModelForCausalLM):
 
     def __init__(
-            self, model: PreTrainedModel, peft_config: PeftConfig, adapter_name: str = "default", pooler_type='cls', hard_negative_weight=0, temp=0.05):
-        super(PeftModelForCausalLM, self).__init__(model, peft_config, adapter_name)
+            self, model: PreTrainedModel, peft_config: PeftConfig, adapter_name: str = "default", autocast_adapter_dtype: bool = True, pooler_type='cls', hard_negative_weight=0, temp=0.05):
+        super(PeftModelForCausalLM, self).__init__(model, peft_config, adapter_name, autocast_adapter_dtype)
         
         self.init_config(pooler_type=pooler_type, hard_negative_weight=hard_negative_weight, temp=temp)
 
         self.pooler = Pooler(self.pooler_type)
-        # if self.pooler_type == "cls":
-        #     self.mlp = MLPLayer(self.config)
+        if self.pooler_type == "cls":
+            self.mlp = MLPLayer(self.config).to(torch.bfloat16)
         self.sim = Similarity(temp=self.temp)
     
     def init_config(self, pooler_type='cls', hard_negative_weight=0, temp=0.05):
@@ -88,8 +88,8 @@ class ChatGLMLoRACSE(PeftModelForCausalLM):
 
         # If using "cls", we add an extra MLP layer
         # (same as BERT's original implementation) over the representation.
-        # if self.pooler_type == "cls":
-        #     pooler_output = self.mlp(pooler_output)
+        if self.pooler_type == "cls":
+            pooler_output = self.mlp(pooler_output)
 
         # Separate representation
         z1, z2 = pooler_output[:, 0], pooler_output[:, 1]
@@ -133,7 +133,55 @@ class ChatGLMLoRACSE(PeftModelForCausalLM):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+    
+    @classmethod
+    def from_pretrained(
+        cls,
+        model: torch.nn.Module,
+        model_id,
+        adapter_name: str = "default",
+        is_trainable: bool = False,
+        config: Optional[PeftConfig] = None,
+        autocast_adapter_dtype: bool = True,
+        pooler_type='cls', hard_negative_weight=0, temp=0.05,
+        **kwargs
+    ):
+        from peft.mapping import MODEL_TYPE_TO_PEFT_MODEL_MAPPING, PEFT_TYPE_TO_CONFIG_MAPPING
 
+        # load the config
+        if config is None:
+            config = PEFT_TYPE_TO_CONFIG_MAPPING[
+                PeftConfig._get_peft_type(
+                    model_id,
+                    subfolder=kwargs.get("subfolder", None),
+                    revision=kwargs.get("revision", None),
+                    cache_dir=kwargs.get("cache_dir", None),
+                    use_auth_token=kwargs.get("use_auth_token", None),
+                    token=kwargs.get("token", None),
+                )
+            ].from_pretrained(model_id, **kwargs)
+        elif isinstance(config, PeftConfig):
+            config.inference_mode = not is_trainable
+        else:
+            raise ValueError(f"The input config must be a PeftConfig, got {config.__class__}")
+
+        if (getattr(model, "hf_device_map", None) is not None) and len(
+            set(model.hf_device_map.values()).intersection({"cpu", "disk"})
+        ) > 0:
+            remove_hook_from_submodules(model)
+
+        if config.is_prompt_learning and is_trainable:
+            raise ValueError("Cannot set a prompt learning adapter to trainable when loading pretrained adapter.")
+        else:
+            config.inference_mode = not is_trainable
+
+        if config.task_type not in MODEL_TYPE_TO_PEFT_MODEL_MAPPING.keys():
+            model = cls(model, config, adapter_name, autocast_adapter_dtype=autocast_adapter_dtype)
+        else:
+            model = ChatGLMLoRACSE(model, config, adapter_name, autocast_adapter_dtype=autocast_adapter_dtype)
+            model.init_config(pooler_type=pooler_type, hard_negative_weight=hard_negative_weight, temp=temp)
+        model.load_adapter(model_id, adapter_name, is_trainable=is_trainable, autocast_adapter_dtype=autocast_adapter_dtype, **kwargs)
+        return model
 
 class MLPLayer(nn.Module):
     """
@@ -191,12 +239,12 @@ class Pooler(nn.Module):
         elif self.pooler_type == "avg":
             return ((last_hidden * attention_mask.unsqueeze(-1)).sum(1) / attention_mask.sum(-1).unsqueeze(-1))
         elif self.pooler_type == "avg_first_last":
-            first_hidden = hidden_states[1]
+            first_hidden = hidden_states[1].transpose(0, 1)
             pooled_result = ((first_hidden + last_hidden) / 2.0 *
                              attention_mask.unsqueeze(-1)).sum(1) / attention_mask.sum(-1).unsqueeze(-1)
             return pooled_result
         elif self.pooler_type == "avg_top2":
-            second_last_hidden = hidden_states[-2]
+            second_last_hidden = hidden_states[-2].transpose(0, 1)
             pooled_result = ((last_hidden + second_last_hidden) / 2.0 *
                              attention_mask.unsqueeze(-1)).sum(1) / attention_mask.sum(-1).unsqueeze(-1)
             return pooled_result

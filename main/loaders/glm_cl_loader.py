@@ -8,6 +8,9 @@ from torch.utils.data import Dataset
 
 
 class CLDataset(Dataset):
+    '''
+    GLM CL Dataset: For ChatGLM data collection.
+    '''
     def __init__(self, tokenizer, file_name, max_seq_len=256, prompt_prefix='This sentence:', prompt_suffix='means in one word:', shuffle=True, is_eval=False):
         self.tokenizer = tokenizer
         self.max_seq_len = max_seq_len
