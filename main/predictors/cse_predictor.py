@@ -53,11 +53,15 @@ class Predictor():
                         item, add_special_tokens=True, return_tensors='pt', max_length=self.max_seq_len, padding='max_length', truncation=True)
                     input_ids_list.append(item_input['input_ids'])
                     attention_mask_list.append(item_input['attention_mask'])
-                    token_type_ids_list.append(item_input['token_type_ids'])
+                    if 'token_type_ids' in item_input:
+                        token_type_ids_list.append(item_input['token_type_ids'])
 
                 input_ids = torch.stack(input_ids_list)
                 attention_mask = torch.stack(attention_mask_list)
-                token_type_ids = torch.stack(token_type_ids_list)
-                outputs = self.model(input_ids=input_ids, attention_mask=attention_mask,
-                                    token_type_ids=token_type_ids)
+                if 'token_type_ids' in item_input:
+                    token_type_ids = torch.stack(token_type_ids_list)
+                    outputs = self.model(input_ids=input_ids, attention_mask=attention_mask,
+                                        token_type_ids=token_type_ids)
+                else:
+                    outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
                 yield outputs

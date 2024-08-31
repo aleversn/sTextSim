@@ -57,7 +57,6 @@ def cl_forward(self,
                inputs_embeds=None,
                labels=None,
                base_cos_sim=None,
-               neg_labels=None,
                output_attentions=None,
                output_hidden_states=None,
                return_dict=None):
@@ -94,6 +93,7 @@ def cl_forward(self,
 
     if is_direct_output:
         pooler_output = self.pooler(attention_mask, outputs)
+        # pooler_output = self.mlp(pooler_output)
 
         return SimCSEOutput(
             loss=None,
@@ -122,11 +122,13 @@ def cl_forward(self,
         z3 = pooler_output[:, 2]
 
     # 原始是bs * bs 最终得到bs * 1的数值相乘矩阵, 这里通过改成bs * 1 * 1 * bs得到bs * bs的数值相乘矩阵
-    cos_sim = self.sim(z1.unsqueeze(1), z2.unsqueeze(0))
+    z1_z2_cos = self.sim(z1.unsqueeze(1), z2.unsqueeze(0))
     # Hard negative
     if num_sent >= 3:
         z1_z3_cos = self.sim(z1.unsqueeze(1), z3.unsqueeze(0))
-        cos_sim = torch.cat([cos_sim, z1_z3_cos], 1)
+        cos_sim = torch.cat([z1_z2_cos, z1_z3_cos], 1)
+    else:
+        cos_sim = z1_z2_cos
 
     labels = torch.arange(cos_sim.size(0)).long().to(self.device)
     loss_fct = nn.CrossEntropyLoss()
@@ -137,12 +139,20 @@ def cl_forward(self,
         z3_weight = torch.diag(z1_z3_cos).detach() #
         neg_labels = torch.diag(base_cos_sim[:,-z1_z3_cos.size(-1):]).detach() #
         z3_weight = -z3_weight * torch.exp(- (z3_weight - neg_labels)**2 / (2 * 0.17**2))
-        z3_weight[z3_weight >= self.alpha] = 0 #
+        # z1_z2_weight = z1_z2_cos.detach()
+        # pos_labels = base_cos_sim[:, :z1_z2_cos.size(-1)].detach()
+        # z1_z2_weight = -z1_z2_weight * torch.exp(- (z1_z2_weight - pos_labels)**2 / (2 * 0.22**2))
+        # indices = torch.arange(z1_z2_weight.size(0))
+        # z1_z2_weight[indices, indices] = 0
         # 画一个前cos_sim.size(-1)列为0, 后z1_z3_cos.size(-1)列对角线为0 + z3_weight的矩阵
         weights = torch.tensor(
             [[0.0] * (cos_sim.size(-1) - z1_z3_cos.size(-1)) + [0.0] * i + [z3_weight[i]] + [
                 0.0] * (z1_z3_cos.size(-1) - i - 1) for i in range(z1_z3_cos.size(-1))]
         ).to(self.device)
+        # weights = torch.tensor(
+        #     [z1_z2_weight[i].tolist() + [0.0] * i + [z3_weight[i]] + [
+        #         0.0] * (z1_z3_cos.size(-1) - i - 1) for i in range(z1_z3_cos.size(-1))]
+        # ).to(self.device)
         cos_sim = cos_sim + weights
 
     loss = loss_fct(cos_sim, labels)
@@ -178,7 +188,6 @@ class GCSE(BertPreTrainedModel):
                 inputs_embeds=None,
                 labels=None,
                 base_cos_sim=None,
-                neg_labels=None,
                 output_attentions=None,
                 output_hidden_states=None,
                 return_dict=None,
@@ -193,18 +202,17 @@ class GCSE(BertPreTrainedModel):
                           inputs_embeds=inputs_embeds,
                           labels=labels,
                           base_cos_sim=base_cos_sim,
-                          neg_labels=neg_labels,
                           output_attentions=output_attentions,
                           output_hidden_states=output_hidden_states,
                           return_dict=return_dict)
 
 
 class GCSERoberta(RobertaPreTrainedModel):
-    def __init__(self, from_pretrained, pooler_type, hard_negative_weight=0, temp=0.05):
+    def __init__(self, from_pretrained, pooler_type, hard_negative_weight=0, temp=0.05, alpha=8.58, beta=19.72):
         self.config = AutoConfig.from_pretrained(from_pretrained)
         super().__init__(self.config)
 
-        cl_init(self, from_pretrained, pooler_type, hard_negative_weight, temp)
+        cl_init(self, from_pretrained, pooler_type, hard_negative_weight, temp, alpha, beta)
 
     def forward(self,
                 input_ids=None,
@@ -215,7 +223,6 @@ class GCSERoberta(RobertaPreTrainedModel):
                 inputs_embeds=None,
                 labels=None,
                 base_cos_sim=None,
-                neg_labels=None,
                 output_attentions=None,
                 output_hidden_states=None,
                 return_dict=None,
@@ -224,13 +231,12 @@ class GCSERoberta(RobertaPreTrainedModel):
         return cl_forward(self,
                           input_ids=input_ids,
                           attention_mask=attention_mask,
-                          token_type_ids=token_type_ids,
+                          token_type_ids=None,
                           position_ids=position_ids,
                           head_mask=head_mask,
                           inputs_embeds=inputs_embeds,
                           labels=labels,
                           base_cos_sim=base_cos_sim,
-                          neg_labels=neg_labels,
                           output_attentions=output_attentions,
                           output_hidden_states=output_hidden_states,
                           return_dict=return_dict)

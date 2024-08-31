@@ -81,7 +81,10 @@ class CLDataset(Dataset):
                             max_length=self.max_seq_len, padding='max_length', truncation=True)
         ss1 = torch.tensor(T1['input_ids'])
         mask1 = torch.tensor(T1['attention_mask'])
-        tid1 = torch.tensor(T1['token_type_ids'])
+        if 'token_type_ids' in T1:
+            tid1 = torch.tensor(T1['token_type_ids'])
+        else:
+            tid1 = torch.tensor([0] * ss1.size(-1))
 
         if 'label' in item:
             label = torch.tensor(float(item['label']))
@@ -92,7 +95,10 @@ class CLDataset(Dataset):
             if 'text2' not in item:
                 ss2 = torch.tensor(T1['input_ids'])
                 mask2 = torch.tensor(T1['attention_mask'])
-                tid2 = torch.tensor(T1['token_type_ids'])
+                if 'token_type_ids' in T2:
+                    tid2 = torch.tensor(T2['token_type_ids'])
+                else:
+                    tid2 = torch.tensor([0] * ss2.size(-1))
             else:
                 s2 = item['text2']
 
@@ -132,7 +138,10 @@ class CLDataset(Dataset):
                             max_length=self.max_seq_len, padding='max_length', truncation=True)
         ss1 = torch.tensor(T1['input_ids'])
         mask1 = torch.tensor(T1['attention_mask'])
-        tid1 = torch.tensor(T1['token_type_ids'])
+        if 'token_type_ids' in T1:
+            tid1 = torch.tensor(T1['token_type_ids'])
+        else:
+            tid1 = torch.tensor([0] * ss1.size(-1))
 
         s2 = item['text2']
 
@@ -141,7 +150,10 @@ class CLDataset(Dataset):
 
         ss2 = torch.tensor(T2['input_ids'])
         mask2 = torch.tensor(T2['attention_mask'])
-        tid2 = torch.ones(ss2.shape).long()
+        if 'token_type_ids' in T2:
+            tid2 = torch.tensor(T2['token_type_ids'])
+        else:
+            tid2 = torch.tensor([0] * ss2.size(-1))
 
         if 'label' in item:
             label = torch.tensor(float(item['label']))
@@ -161,4 +173,4 @@ class CLDataset(Dataset):
         return self.get_train_item(idx)
 
     def __len__(self):
-        return len(self.compute_data)
+        return len(self.compute_data) // 2 * 2

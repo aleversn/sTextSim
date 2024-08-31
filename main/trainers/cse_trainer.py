@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 class Trainer():
 
-    def __init__(self, tokenizer, from_pretrained=None, data_name='default', data_present_path=None, train_file=None, eval_file=None, test_file=None, max_seq_len=256, batch_size=16, batch_size_eval=64, eval_label_scale=5.0, hard_negative_weight=0, temp=0.05, eval_mode='dev', task_name='SimCSE'):
+    def __init__(self, tokenizer, from_pretrained=None, data_name='default', data_present_path=None, train_file=None, eval_file=None, test_file=None, max_seq_len=256, batch_size=16, batch_size_eval=64, eval_label_scale=5.0, hard_negative_weight=0, temp=0.05, eval_mode='dev', task_name='SimCSE', **args):
         self.tokenizer = tokenizer
         self.from_pretrained = from_pretrained
         self.data_name = data_name
@@ -79,16 +79,17 @@ class Trainer():
         return data_present
 
     def model_to_device(self, gpu=[0]):
+        self.num_gpus = len(gpu)
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model.cuda()
         self.model = torch.nn.DataParallel(self.model, device_ids=gpu).cuda()
         self.model.to(device)
 
-    def __call__(self, resume_step=None, num_epochs=30, lr=5e-5, gpu=[0, 1, 2, 3], eval_call_step=None):
+    def __call__(self, resume_step=None, num_epochs=30, lr=5e-5, gpu=[0, 1, 2, 3], eval_call_step=None, save_per_call=False):
         return self.train(resume_step=resume_step,
-                          num_epochs=num_epochs, lr=lr, gpu=gpu, eval_call_step=eval_call_step)
+                          num_epochs=num_epochs, lr=lr, gpu=gpu, eval_call_step=eval_call_step, save_per_call=save_per_call)
 
-    def train(self, resume_step=None, num_epochs=30, lr=5e-5, gpu=[0, 1, 2, 3], eval_call_step=None):
+    def train(self, resume_step=None, num_epochs=30, lr=5e-5, gpu=[0, 1, 2, 3], eval_call_step=None, save_per_call=False):
         self.model_to_device(gpu=gpu)
 
         optimizer = optim.Adam(self.model.parameters(), lr=lr, weight_decay=0.)
@@ -132,6 +133,8 @@ class Trainer():
                     if score > best_eval_score:
                         best_eval_score = score
                         self.save_model('best')
+                    elif save_per_call:
+                        self.save_model(train_step, '_step')
                     self.analysis.save_pred_gold(
                         X, Y, uid=current_uid if self.task_name is None else self.task_name, step=train_step)
                     self.analysis.save_all_records(
@@ -150,7 +153,7 @@ class Trainer():
                 uid=current_uid if self.task_name is None else self.task_name)
             yield (epoch, self.analysis.train_record, self.analysis.eval_record, self.analysis.model_record, model_uid)
 
-    def save_model(self, current_step=0):
+    def save_model(self, current_step=0, prefix=''):
         if self.task_name is None:
             dir = 'undefined'
         else:
@@ -163,7 +166,7 @@ class Trainer():
         # bert_model.save_pretrained(
         #     f'./save_model/{dir}/bert_{current_step}')
         model_self.save_pretrained(
-            f'./save_model/{dir}/simcse_{current_step}', safe_serialization=False)
+            f'./save_model/{dir}/simcse{prefix}_{current_step}', safe_serialization=False)
         self.analysis.append_model_record(current_step)
         return current_step
 
@@ -194,7 +197,14 @@ class Trainer():
                 logits = outputs['logits']
                 loss = loss.mean()
 
-                p = torch.diag(logits) * self.temp
+                if self.num_gpus > 1:
+                    p = []
+                    per_size = logits.size(1)
+                    for i in range(self.num_gpus):
+                        p.append(torch.diag(logits[i * per_size : (i + 1) * per_size]) * self.temp)
+                    p = torch.cat(p, dim=0)
+                else:
+                    p = torch.diag(logits) * self.temp
                 # print(logits[29] * self.temp)
                 # text1 = self.tokenizer.decode(it['input_ids'][29][0], skip_special_tokens=True)
                 # text2 = self.tokenizer.decode(it['input_ids'][29][1], skip_special_tokens=True)

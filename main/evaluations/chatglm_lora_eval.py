@@ -120,16 +120,16 @@ def main(set_args=None, set_model=None, set_tokenizer=None):
         # Get raw embeddings
         with torch.no_grad():
             outputs = model(**batch, output_hidden_states=True, return_dict=True)
-            last_hidden = outputs.last_hidden_state
+            last_hidden = outputs.hidden_states[-1].transpose(0, 1)
             pooler_output = outputs.pooler_output
             hidden_states = outputs.hidden_states
 
         # Apply different poolers
         if args.pooler == 'cls':
             # There is a linear+activation layer after CLS representation
-            return pooler_output.cpu()
+            return pooler_output.to(torch.float16).cpu()
         elif args.pooler == 'cls_before_pooler':
-            return last_hidden[:, 0].cpu()
+            return last_hidden[:, -1].cpu()
         elif args.pooler == "avg":
             return ((last_hidden * batch['attention_mask'].unsqueeze(-1)).sum(1) / batch['attention_mask'].sum(-1).unsqueeze(-1)).cpu()
         elif args.pooler == "avg_first_last":
