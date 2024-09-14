@@ -8,10 +8,14 @@ from torch.utils.data import Dataset
 
 
 class CLDataset(Dataset):
-    def __init__(self, tokenizer, file_name, max_seq_len=256, shuffle=True, is_eval=False):
+    def __init__(self, tokenizer, file_name, max_seq_len=256, shuffle=True, is_enhance_feature=False, enhance_feature_lang='en', enhance_dup=0.05, enhance_stop_words=None, is_eval=False):
         self.tokenizer = tokenizer
         self.max_seq_len = max_seq_len
         self.is_eval = is_eval
+        self.is_enhance_feature = is_enhance_feature
+        self.enhance_feature_lang = enhance_feature_lang
+        self.dup_ratio = enhance_dup
+        self.stop_words = enhance_stop_words
         self.ori_data, self.compute_data = self.load_train(
             file_name)
         self.random_list = list(range(len(self.compute_data)))
@@ -74,9 +78,30 @@ class CLDataset(Dataset):
 
         return ori_data, result
     
+    def get_enhance_feature(self, text):
+        if self.enhance_feature_lang != 'cn':
+            sent_list = text.split(' ')
+        else:
+            import jieba
+            sent_list = jieba.cut(text)
+        sent_len = len(sent_list)
+        if sent_len > 0:
+            add_len = random.randrange(min(10, sent_len, max(2, int(self.dup_ratio * sent_len))))
+            dup = sorted(random.sample(range(0, sent_len-1), add_len))
+            for i in dup:
+                if self.stop_words is not None:
+                    stop_index = random.randint(0,len(self.stop_words)-1)
+                    sent_list[i] = sent_list[i] + ' ' + self.stop_words[stop_index]
+                else :
+                    sent_list[i] = sent_list[i] + ' ' + sent_list[i]
+            return ' '.join(sent_list)
+        return text
+    
     def get_train_item(self, idx):
         item = self.compute_data[self.random_list[idx]]
         s1 = item['text1']
+        if self.enhance_feature_lang:
+            s1 = self.get_enhance_feature(s1)
         T1 = self.tokenizer(s1, add_special_tokens=True,
                             max_length=self.max_seq_len, padding='max_length', truncation=True)
         ss1 = torch.tensor(T1['input_ids'])
