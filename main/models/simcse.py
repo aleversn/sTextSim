@@ -210,7 +210,7 @@ class SimCSERoberta(RobertaPreTrainedModel):
         return cl_forward(self,
                           input_ids=input_ids,
                           attention_mask=attention_mask,
-                          token_type_ids=token_type_ids,
+                          token_type_ids=None,
                           position_ids=position_ids,
                           head_mask=head_mask,
                           inputs_embeds=inputs_embeds,

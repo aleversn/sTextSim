@@ -138,10 +138,10 @@ def cl_forward(self,
         # Note that weights are actually logits of weights
         z3_weight = torch.diag(z1_z3_cos).detach() #
         neg_labels = torch.diag(base_cos_sim[:,-z1_z3_cos.size(-1):]).detach() #
-        z3_weight = -z3_weight * torch.exp(- (z3_weight - neg_labels)**2 / (2 * 0.17**2))
+        z3_weight = -z3_weight * torch.exp(- (z3_weight - neg_labels)**2 / (2 * self.alpha**2))
         # z1_z2_weight = z1_z2_cos.detach()
         # pos_labels = base_cos_sim[:, :z1_z2_cos.size(-1)].detach()
-        # z1_z2_weight = -z1_z2_weight * torch.exp(- (z1_z2_weight - pos_labels)**2 / (2 * 0.22**2))
+        # z1_z2_weight = -z1_z2_weight * torch.exp(- (z1_z2_weight - pos_labels)**2 / (2 * self.beta**2))
         # indices = torch.arange(z1_z2_weight.size(0))
         # z1_z2_weight[indices, indices] = 0
         # 画一个前cos_sim.size(-1)列为0, 后z1_z3_cos.size(-1)列对角线为0 + z3_weight的矩阵
@@ -173,7 +173,7 @@ def cl_forward(self,
 
 class GCSE(BertPreTrainedModel):
 
-    def __init__(self, from_pretrained, pooler_type, hard_negative_weight=0, temp=0.05, alpha=8.58, beta=19.72):
+    def __init__(self, from_pretrained, pooler_type, hard_negative_weight=0, temp=0.05, alpha=0.17, beta=0.22):
         self.config = AutoConfig.from_pretrained(from_pretrained)
         super().__init__(self.config)
 

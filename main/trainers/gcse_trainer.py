@@ -18,7 +18,7 @@ from tqdm import tqdm
 
 class Trainer():
 
-    def __init__(self, tokenizer, from_pretrained=None, base_from_pretrained=None, data_name='default', data_present_path=None, train_file=None, eval_file=None, test_file=None, max_seq_len=256, batch_size=16, batch_size_eval=64, eval_label_scale=5.0, hard_negative_weight=0, temp=0.05, eval_mode='dev', task_name='GCSE'):
+    def __init__(self, tokenizer, from_pretrained=None, base_from_pretrained=None, data_name='default', data_present_path=None, train_file=None, eval_file=None, test_file=None, max_seq_len=256, batch_size=16, batch_size_eval=64, eval_label_scale=5.0, hard_negative_weight=0, temp=0.05, alpha=0.17, beta=0.22, eval_mode='dev', task_name='GCSE'):
         self.tokenizer = tokenizer
         self.from_pretrained = from_pretrained
         self.base_from_pretrained = base_from_pretrained
@@ -34,6 +34,8 @@ class Trainer():
         self.eval_label_scale = eval_label_scale
         self.hard_negative_weight = hard_negative_weight
         self.temp = temp
+        self.alpha = alpha
+        self.beta = beta
         self.eval_mode = eval_mode
 
         self.dataloader_init()
@@ -46,12 +48,12 @@ class Trainer():
         base_from_pretrained = self.base_from_pretrained if self.base_from_pretrained is not None else self.from_pretrained
         if self.config.model_type == 'bert':
             self.model = GCSE(from_pretrained=self.from_pretrained,
-                                pooler_type='cls', hard_negative_weight=self.hard_negative_weight, temp=self.temp)
+                                pooler_type='cls', hard_negative_weight=self.hard_negative_weight, temp=self.temp, alpha=self.alpha, beta=self.beta)
             self.base_model = SimCSE(from_pretrained=base_from_pretrained,
                                 pooler_type='cls', hard_negative_weight=self.hard_negative_weight, temp=self.temp)
         elif self.config.model_type == 'roberta':
             self.model = GCSERoberta(from_pretrained=self.from_pretrained,
-                                       pooler_type='cls', hard_negative_weight=self.hard_negative_weight, temp=self.temp)
+                                       pooler_type='cls', hard_negative_weight=self.hard_negative_weight, temp=self.temp, alpha=self.alpha, beta=self.beta)
             self.base_model = SimCSERoberta(from_pretrained=base_from_pretrained,
                                        pooler_type='cls', hard_negative_weight=self.hard_negative_weight, temp=self.temp)
 
