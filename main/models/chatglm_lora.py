@@ -11,20 +11,21 @@ from transformers.utils import ModelOutput
 class ChatGLMLoRACSE(PeftModelForCausalLM):
 
     def __init__(
-            self, model: PreTrainedModel, peft_config: PeftConfig, adapter_name: str = "default", autocast_adapter_dtype: bool = True, pooler_type='cls', hard_negative_weight=0, temp=0.05):
+            self, model: PreTrainedModel, peft_config: PeftConfig, adapter_name: str = "default", autocast_adapter_dtype: bool = True, pooler_type='cls', hard_negative_weight=0, temp=0.05, tensor_style='batch_first'):
         super(PeftModelForCausalLM, self).__init__(model, peft_config, adapter_name, autocast_adapter_dtype)
         
         self.init_config(pooler_type=pooler_type, hard_negative_weight=hard_negative_weight, temp=temp)
 
-        self.pooler = Pooler(self.pooler_type)
+        self.pooler = Pooler(self.pooler_type, tensor_style)
         if self.pooler_type == "cls":
             self.mlp = MLPLayer(self.config).to(torch.bfloat16)
         self.sim = Similarity(temp=self.temp)
     
-    def init_config(self, pooler_type='cls', hard_negative_weight=0, temp=0.05):
+    def init_config(self, pooler_type='cls', hard_negative_weight=0, temp=0.05, tensor_style='batch_first'):
         self.pooler_type = pooler_type
         self.hard_negative_weight = hard_negative_weight
         self.temp = temp
+        self.tensor_style = tensor_style
     
     def forward(self,
                 input_ids: Optional[torch.Tensor] = None,
@@ -143,7 +144,7 @@ class ChatGLMLoRACSE(PeftModelForCausalLM):
         is_trainable: bool = False,
         config: Optional[PeftConfig] = None,
         autocast_adapter_dtype: bool = True,
-        pooler_type='cls', hard_negative_weight=0, temp=0.05,
+        pooler_type='cls', hard_negative_weight=0, temp=0.05, tensor_style='batch_first',
         **kwargs
     ):
         from peft.mapping import MODEL_TYPE_TO_PEFT_MODEL_MAPPING, PEFT_TYPE_TO_CONFIG_MAPPING
@@ -178,8 +179,8 @@ class ChatGLMLoRACSE(PeftModelForCausalLM):
         if config.task_type not in MODEL_TYPE_TO_PEFT_MODEL_MAPPING.keys():
             model = cls(model, config, adapter_name, autocast_adapter_dtype=autocast_adapter_dtype)
         else:
-            model = ChatGLMLoRACSE(model, config, adapter_name, autocast_adapter_dtype=autocast_adapter_dtype)
-            model.init_config(pooler_type=pooler_type, hard_negative_weight=hard_negative_weight, temp=temp)
+            model = ChatGLMLoRACSE(model, config, adapter_name, autocast_adapter_dtype=autocast_adapter_dtype, hard_negative_weight=hard_negative_weight, temp=temp, tensor_style=tensor_style)
+            model.init_config(pooler_type=pooler_type, hard_negative_weight=hard_negative_weight, temp=temp, tensor_style=tensor_style)
         model.load_adapter(model_id, adapter_name, is_trainable=is_trainable, autocast_adapter_dtype=autocast_adapter_dtype, **kwargs)
         return model
 
@@ -224,9 +225,10 @@ class Pooler(nn.Module):
     'avg_first_last': average of the first and the last layers.
     """
 
-    def __init__(self, pooler_type):
+    def __init__(self, pooler_type, tensor_style='batch_first'):
         super().__init__()
         self.pooler_type = pooler_type
+        self.tensor_style = tensor_style
         assert self.pooler_type in ["cls", "cls_before_pooler", "avg", "avg_top2",
                                     "avg_first_last"], "unrecognized pooling type %s" % self.pooler_type
 
@@ -235,6 +237,9 @@ class Pooler(nn.Module):
         last_hidden = hidden_states[-1].transpose(0, 1)
 
         if self.pooler_type in ['cls_before_pooler', 'cls']:
+            if self.tensor_style != 'batch_first':
+                last_hidden_transpose = last_hidden.transpose(0, 1)
+                return last_hidden_transpose[:, -1]
             return last_hidden[:, -1]
         elif self.pooler_type == "avg":
             return ((last_hidden * attention_mask.unsqueeze(-1)).sum(1) / attention_mask.sum(-1).unsqueeze(-1))

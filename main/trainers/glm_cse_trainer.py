@@ -23,7 +23,7 @@ accelerator = Accelerator()
 
 def get_peft_model(
     model: PreTrainedModel, peft_config: PeftConfig, adapter_name: str = "default", autocast_adapter_dtype: bool = True,
-    revision = None, pooler_type='cls', hard_negative_weight=0, temp=0.05):
+    revision = None, pooler_type='cls', hard_negative_weight=0, temp=0.05, tensor_style='batch_first'):
     """
     Returns a Peft model object from a model and a config.
 
@@ -59,13 +59,13 @@ def get_peft_model(
 
     if peft_config.is_prompt_learning:
         peft_config = _prepare_prompt_learning_config(peft_config, model_config)
-    return ChatGLMLoRACSE(model, peft_config, adapter_name=adapter_name, pooler_type=pooler_type, hard_negative_weight=hard_negative_weight, temp=temp, autocast_adapter_dtype=autocast_adapter_dtype)
+    return ChatGLMLoRACSE(model, peft_config, adapter_name=adapter_name, pooler_type=pooler_type, hard_negative_weight=hard_negative_weight, temp=temp, autocast_adapter_dtype=autocast_adapter_dtype, tensor_style=tensor_style)
 
 
 class Trainer():
     model: ChatGLMLoRACSE
     def __init__(
-        self, tokenizer, from_pretrained=None, resume_path=None, autocast_adapter_dtype = True, data_name='default', data_present_path=None, train_file=None, eval_file=None, test_file=None, max_seq_len=256, batch_size=2, batch_size_eval=32, eval_label_scale=5.0, hard_negative_weight=0, temp=0.05, eval_mode='dev', task_name='SimCSE'
+        self, tokenizer, from_pretrained=None, resume_path=None, autocast_adapter_dtype = True, data_name='default', data_present_path=None, train_file=None, eval_file=None, test_file=None, max_seq_len=256, batch_size=2, batch_size_eval=32, eval_label_scale=5.0, hard_negative_weight=0, temp=0.05, tensor_style='batch_first', eval_mode='dev', task_name='SimCSE'
     ):
 
         self.tokenizer = tokenizer
@@ -85,6 +85,7 @@ class Trainer():
         self.eval_label_scale = eval_label_scale
         self.hard_negative_weight = hard_negative_weight
         self.temp = temp
+        self.tensor_style = tensor_style
         self.eval_mode = eval_mode
 
         self.dataloader_init()
@@ -109,9 +110,9 @@ class Trainer():
                 print('Accessing Resume PATH: {} ...\n'.format(self.resume_path))
                 self.model.enable_input_require_grads()
                 self.model = ChatGLMLoRACSE.from_pretrained(
-                    self.model, self.resume_path, config=peft_config)
+                    self.model, self.resume_path, config=peft_config, hard_negative_weight=self.hard_negative_weight, temp=self.temp, autocast_adapter_dtype=self.autocast_adapter_dtype, tensor_style=self.tensor_style)
             else:
-                self.model = get_peft_model(self.model, peft_config, pooler_type='cls', hard_negative_weight=self.hard_negative_weight, temp=self.temp)
+                self.model = get_peft_model(self.model, peft_config, pooler_type='cls', hard_negative_weight=self.hard_negative_weight, temp=self.temp, tensor_style=self.tensor_style)
 
     def dataloader_init(self):
         if self.data_present_path is None:
