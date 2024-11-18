@@ -218,10 +218,10 @@ class Trainer():
         if not os.path.exists(f'./save_model/{dir}'):
             os.makedirs(f'./save_model/{dir}')
         save_model = self.accelerate.unwrap_model(self.model)
-        save_model.model.save_pretrained(
+        save_model.save_pretrained(
             f'./save_model/{dir}/simcse_{current_step}',
             is_main_process=self.accelerate.is_main_process,
-            save_function=self.accelerate.save,
+            save_function=self.accelerate.save
         )
         self.analysis.append_model_record(current_step)
         return current_step
