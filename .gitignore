@@ -4,3 +4,4 @@ save_model/
 data_record/
 dataset/
 .hypothesis/
+SentEval/data/
