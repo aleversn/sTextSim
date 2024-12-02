@@ -27,7 +27,7 @@ class STSDataset(Dataset):
         item = self.ori_json[idx]
         s1 = item['text1']
         s2 = item['text2']
-        labels = int(item['label'])
+        labels = float(item['label'])
         if self.data_type == 'interactive':
             T = self.tokenizer(s1, s2, add_special_tokens=True, max_length=self.max_seq_len, padding='max_length', truncation=True)
             input_ids = torch.tensor(T['input_ids'])
