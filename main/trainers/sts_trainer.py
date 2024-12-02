@@ -134,7 +134,7 @@ class Trainer():
 
                 logits = outputs['logits']
                 gold = it['labels']
-                p = self.analysis.computed_batch_label(logits)
+                p = self.analysis.computed_batch_label(logits, mode=self.mode)
                 X += p.tolist()
                 Y += gold.tolist()
                 eval_scores = self.analysis.computed_f1(X, Y)
@@ -227,7 +227,7 @@ class Trainer():
                 eval_count += 1
 
                 gold = it['labels']
-                p = self.analysis.computed_batch_label(logits)
+                p = self.analysis.computed_batch_label(logits, mode=self.mode)
                 X += p.tolist()
                 Y += gold.tolist()
                 eval_scores = self.analysis.computed_f1(X, Y)

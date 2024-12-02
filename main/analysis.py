@@ -75,9 +75,9 @@ class Analysis():
         return uid
     
     @staticmethod
-    def computed_batch_label(logits: torch.FloatTensor):
-        if len(logits.size()) == 1:
-            return logits.tolist()
+    def computed_batch_label(logits: torch.FloatTensor, mode='regression'):
+        if mode == 'regression' and logits.size(1) == 2:
+            return logits[:, 1]
         else:
             return logits.argmax(dim=1)
     
