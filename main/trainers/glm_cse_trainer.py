@@ -65,7 +65,7 @@ def get_peft_model(
 class Trainer():
     model: ChatGLMLoRACSE
     def __init__(
-        self, tokenizer, from_pretrained=None, resume_path=None, autocast_adapter_dtype = True, data_name='default', data_present_path=None, train_file=None, eval_file=None, test_file=None, max_seq_len=256, batch_size=2, batch_size_eval=32, eval_label_scale=5.0, hard_negative_weight=0, temp=0.05, eval_mode='dev', task_name='SimCSE'
+        self, tokenizer, from_pretrained=None, resume_path=None, autocast_adapter_dtype = True, data_name='default', data_present_path=None, train_file=None, eval_file=None, test_file=None, max_seq_len=256, batch_size=2, batch_size_eval=32, eval_label_scale=5.0, hard_negative_weight=0, temp=0.05, eval_mode='dev', task_name='SimCSE', **args
     ):
 
         self.tokenizer = tokenizer
@@ -143,11 +143,11 @@ class Trainer():
         data_present = json.loads(present_json)
         return data_present
 
-    def __call__(self, resume_step=None, num_epochs=30, lr=5e-5, eval_call_step=None):
+    def __call__(self, resume_step=None, num_epochs=30, lr=5e-5, eval_call_step=None, **args):
         return self.train(resume_step=resume_step,
-                          num_epochs=num_epochs, lr=lr, eval_call_step=eval_call_step)
+                          num_epochs=num_epochs, lr=lr, eval_call_step=eval_call_step, **args)
 
-    def train(self, resume_step=None, num_epochs=30, lr=5e-5, eval_call_step=None):
+    def train(self, resume_step=None, num_epochs=30, lr=5e-5, eval_call_step=None, **args):
         optimizer = optim.Adam(self.model.parameters(), lr=lr, weight_decay=0.)
         scheduler = get_linear_schedule_with_warmup(optimizer, 190, 80000)
         self.model, optimizer, train_loader, scheduler = self.accelerate.prepare(self.model, optimizer, self.train_loader, scheduler)
