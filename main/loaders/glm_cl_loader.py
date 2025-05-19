@@ -94,7 +94,6 @@ class CLDataset(Dataset):
                             max_length=self.max_seq_len, padding='max_length', truncation=True)
         ss1 = self.compute_input_tensor(T1, 'input_ids')
         mask1 = self.compute_input_tensor(T1, 'attention_mask')
-        tid1 = self.compute_input_tensor(T1, 'token_type_ids', input_tensor=ss1)
 
         if 'label' in item:
             label = torch.tensor(float(item['label']))
@@ -105,7 +104,6 @@ class CLDataset(Dataset):
             if 'text2' not in item:
                 ss2 = self.compute_input_tensor(T1, 'input_ids')
                 mask2 = self.compute_input_tensor(T1, 'attention_mask')
-                tid2 = self.compute_input_tensor(T1, 'token_type_ids', input_tensor=ss2)
             else:
                 s2 = item['text2']
 
@@ -114,7 +112,6 @@ class CLDataset(Dataset):
 
                 ss2 = self.compute_input_tensor(T2, 'input_ids')
                 mask2 = self.compute_input_tensor(T2, 'attention_mask')
-                tid2 = self.compute_input_tensor(T2, 'token_type_ids', input_tensor=ss2)
 
             neg = item['neg']
             T3 = self.tokenizer(neg, add_special_tokens=True,
@@ -122,19 +119,16 @@ class CLDataset(Dataset):
             
             ss3 = self.compute_input_tensor(T3, 'input_ids')
             mask3 = self.compute_input_tensor(T3, 'attention_mask')
-            tid3 = self.compute_input_tensor(T3, 'token_type_ids', input_tensor=ss3)
 
             return {
                 'input_ids': torch.stack([ss1, ss2, ss3]),
                 'attention_mask': torch.stack([mask1, mask2, mask3]),
-                'token_type_ids': torch.stack([tid1, tid2, tid3]),
                 'labels': label
             }
         
         return {
             'input_ids': torch.stack([ss1, ss1]),
             'attention_mask': torch.stack([mask1, mask1]),
-            'token_type_ids': torch.stack([tid1, tid1]),
             'labels': label
         }
     
@@ -145,7 +139,6 @@ class CLDataset(Dataset):
                             max_length=self.max_seq_len, padding='max_length', truncation=True)
         ss1 = self.compute_input_tensor(T1, 'input_ids')
         mask1 = self.compute_input_tensor(T1, 'attention_mask')
-        tid1 = self.compute_input_tensor(T1, 'token_type_ids', input_tensor=ss1)
 
         s2 = item['text2']
 
@@ -154,7 +147,6 @@ class CLDataset(Dataset):
 
         ss2 = self.compute_input_tensor(T2, 'input_ids')
         mask2 = self.compute_input_tensor(T2, 'attention_mask')
-        tid2 = self.compute_input_tensor(T2, 'token_type_ids', input_tensor=ss2)
         if 'label' in item:
             label = torch.tensor(float(item['label']))
         else:
@@ -163,7 +155,6 @@ class CLDataset(Dataset):
         return {
             'input_ids': torch.stack([ss1, ss2]),
             'attention_mask': torch.stack([mask1, mask2]),
-            'token_type_ids': torch.stack([tid1, tid2]),
             'labels': label
         }
 

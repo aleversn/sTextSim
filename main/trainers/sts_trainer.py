@@ -18,7 +18,7 @@ from tqdm import tqdm
 
 class Trainer():
 
-    def __init__(self, tokenizer, from_pretrained=None, model_type='bert', data_name='default', data_present_path=None, data_type='interactive', train_file=None, eval_file=None, test_file=None, max_seq_len=256, batch_size=16, batch_size_eval=64, hard_negative_weight=0, temp=0.05, eval_mode='dev', task_name='STS'):
+    def __init__(self, tokenizer, from_pretrained=None, model_type='bert', data_name='default', data_present_path=None, data_type='interactive', train_file=None, eval_file=None, test_file=None, max_seq_len=256, batch_size=16, batch_size_eval=64, hard_negative_weight=0, temp=0.05, num_labels=2, fct_loss='BCELoss', eval_mode='dev', task_name='STS'):
         self.tokenizer = tokenizer
         self.from_pretrained = from_pretrained
         self.model_type = model_type
@@ -28,6 +28,12 @@ class Trainer():
         self.train_file = train_file
         self.eval_file = eval_file
         self.test_file = test_file
+        self.num_labels = num_labels
+        self.fct_loss = fct_loss
+        if self.num_labels == 1 or (self.num_labels==2 and self.fct_loss=='BCELoss'):
+            self.mode = 'regression'
+        else:
+            self.mode = 'cls'
         self.task_name = task_name
         self.max_seq_len = max_seq_len
         self.batch_size = batch_size
@@ -46,7 +52,7 @@ class Trainer():
         if self.model_type == 'sbert':
             self.model = SBert(from_pretrained=self.from_pretrained, max_seq_len=self.max_seq_len)
         elif self.model_type == 'bert':
-            self.model = Bert(from_pretrained=self.from_pretrained)
+            self.model = Bert(from_pretrained=self.from_pretrained, num_labels=self.num_labels, fct_loss=self.fct_loss)
 
     def dataloader_init(self):
         if self.data_present_path is None:
@@ -101,17 +107,19 @@ class Trainer():
         for epoch in range(num_epochs):
             train_count = 0
             train_loss = 0
-            precision = []
-            recall = []
-            f1 = []
+            precision = 0
+            recall = 0
+            f1 = 0
             X = []
             Y = []
-            train_spearman = []
+            train_spearman = 0
 
             train_iter = tqdm(self.train_loader)
             self.model.train()
 
             for it in train_iter:
+                if self.mode == 'regression':
+                    it['labels'][it['labels'] > 1] = 1
                 for key in it.keys():
                     it[key] = self.cuda(it[key])
 
@@ -126,17 +134,17 @@ class Trainer():
 
                 logits = outputs['logits']
                 gold = it['labels']
-                p = self.analysis.computed_batch_label(logits)
+                p = self.analysis.computed_batch_label(logits, mode=self.mode)
                 X += p.tolist()
                 Y += gold.tolist()
-                eval_scores = self.analysis.computed_batch_f1(p, gold)
-                precision.append(eval_scores['precision'])
-                recall.append(eval_scores['recall'])
-                f1.append(eval_scores['f1'])
+                eval_scores = self.analysis.computed_f1(X, Y)
+                precision = (eval_scores['precision'])
+                recall = (eval_scores['recall'])
+                f1 = (eval_scores['f1'])
                 
                 r, r_mse, pearsonr, spearmanr = self.analysis.evaluationSAS(
                     X, Y)
-                train_spearman.append(spearmanr)
+                train_spearman = spearmanr
 
                 train_loss += loss.data.item()
                 train_count += 1
@@ -145,7 +153,7 @@ class Trainer():
                 train_iter.set_description(
                     'Train: {}/{}'.format(epoch + 1, num_epochs))
                 train_iter.set_postfix(
-                    train_loss=train_loss / train_count, Spearman=np.mean(spearmanr), precision=np.mean(precision), recall=np.mean(recall), f1=np.mean(f1))
+                    train_loss=train_loss / train_count, Spearman=train_spearman, precision=precision, recall=recall, f1=f1)
 
                 if (eval_call_step is None and train_step % 125 == 0) or eval_call_step(train_step):
                     X, Y, score = self.eval(train_step)
@@ -194,17 +202,19 @@ class Trainer():
         with torch.no_grad():
             eval_count = 0
             eval_loss = 0
-            precision = []
-            recall = []
-            f1 = []
+            precision = 0
+            recall = 0
+            f1 = 0
             X = []
             Y = []
-            eval_spearman = []
+            eval_spearman = 0
 
             eval_iter = tqdm(self.eval_loader)
             self.model.eval()
 
             for it in eval_iter:
+                if self.mode == 'regression':
+                    it['labels'][it['labels'] > 1] = 1
                 for key in it.keys():
                     it[key] = self.cuda(it[key])
 
@@ -217,21 +227,21 @@ class Trainer():
                 eval_count += 1
 
                 gold = it['labels']
-                p = self.analysis.computed_batch_label(logits)
+                p = self.analysis.computed_batch_label(logits, mode=self.mode)
                 X += p.tolist()
                 Y += gold.tolist()
-                eval_scores = self.analysis.computed_batch_f1(p, gold)
-                precision.append(eval_scores['precision'])
-                recall.append(eval_scores['recall'])
-                f1.append(eval_scores['f1'])
+                eval_scores = self.analysis.computed_f1(X, Y)
+                precision = (eval_scores['precision'])
+                recall = (eval_scores['recall'])
+                f1 = (eval_scores['f1'])
                 r, r_mse, pearsonr, spearmanr = self.analysis.evaluationSAS(
                     X, Y)
-                eval_spearman.append(spearmanr)
+                eval_spearman = spearmanr
 
                 eval_iter.set_description(
                     f'Eval: {epoch + 1}')
                 eval_iter.set_postfix(
-                    eval_loss=eval_loss / eval_count, Spearman=np.mean(spearmanr), precision=np.mean(precision), recall=np.mean(recall), f1=np.mean(f1))
+                    eval_loss=eval_loss / eval_count, Spearman=eval_spearman, precision=precision, recall=recall, f1=f1)
 
             self.analysis.append_eval_record({
                 'epoch': epoch + 1,

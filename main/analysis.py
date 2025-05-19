@@ -75,15 +75,17 @@ class Analysis():
         return uid
     
     @staticmethod
-    def computed_batch_label(logits: torch.FloatTensor, binary_threshold: float = 0.5):
-        if len(logits.size()) == 1:
-            return logits > binary_threshold
+    def computed_batch_label(logits: torch.FloatTensor, mode='regression'):
+        if mode == 'regression' and logits.size(1) == 2:
+            return logits[:, 1]
         else:
             return logits.argmax(dim=1)
     
     @staticmethod
-    def computed_batch_f1(pred: torch.Tensor, gold: torch.Tensor):
-        if (pred < 1).sum().item() > 0:
+    def computed_f1(pred: list, gold: list, mode='regression', num_labels=1):
+        pred = torch.tensor(pred)
+        gold = torch.tensor(gold)
+        if mode == 'regression':
             tp = ((pred >= 0.5) & (gold >= 0.5)).sum().item()
             fp = ((pred >= 0.5) & (gold < 0.5)).sum().item()
             fn = ((pred < 0.5) & (gold >= 0.5)).sum().item()
@@ -95,26 +97,28 @@ class Analysis():
                 'recall': recall,
                 'f1': f1
             }
-        max_label = max(pred.max().item(), gold.max().item())
-        max_label = int(max_label) + 1
-        tp = [0 for _ in range(max_label)]
-        fp = [0 for _ in range(max_label)]
-        fn = [0 for _ in range(max_label)]
-        for i in range(max_label):
-            tp[i] = ((pred == i) & (gold == i)).sum().item()
-            fp[i] = ((pred == i) & (gold != i)).sum().item()
-            fn[i] = ((pred != i) & (gold == i)).sum().item()
-        precision = [tp[i] / (tp[i] + fp[i]) if (tp[i] + fp[i]) > 0 else 0 for i in range(max_label)]
-        recall = [tp[i] / (tp[i] + fn[i]) if (tp[i] + fn[i]) > 0 else 0 for i in range(max_label)]
-        f1 = [2 * precision[i] * recall[i] / (precision[i] + recall[i]) if (precision[i] + recall[i]) > 0 else 0 for i in range(max_label)]
-        return {
-            'tp': np.array(tp),
-            'fp': np.array(fp),
-            'fn': np.array(fn),
-            'precision': precision,
-            'recall': recall,
-            'f1': f1
-        }
+        else:
+            tp = {}
+            fp = {}
+            fn = {}
+            for p_item, g_item in zip(pred.tolist(), gold.tolist()):
+                if p_item == g_item:
+                    tp[g_item] += 1
+                else:
+                    fn[g_item] += 1
+                    fp[p_item] += 1
+            
+            result_dict = {}
+            for i in range(num_labels):
+                result_dict[str(i)] = {
+                    'precision': tp[i] / (tp[i] + fp[i]),
+                    'recall': tp[i] / (tp[i] + fn[i]),
+                    'f1': 2 * tp[i] / (2*tp[i] + fp[i] + fn[i]) if tp[i] != 0 else 0,
+                }
+            result_dict['f1'] = np.mean([result_dict[str(i)]['f1'] for k in range(num_labels)])
+            result_dict['precision'] = np.mean([result_dict[str(i)]['precision'] for k in range(num_labels)])
+            result_dict['recall'] = np.mean([result_dict[str(i)]['recall'] for k in range(num_labels)])
+            return result_dict
 
     '''
     X: the gold labels
